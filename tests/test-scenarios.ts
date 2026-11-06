@@ -174,10 +174,20 @@ async function runTestSuite() {
     const launcherPath = opencodeService.getLauncherPath();
     assert(fs.existsSync(launcherPath), 'Dedicated launcher opencode-vpn must exist');
 
+    const isWindows = process.platform === 'win32';
     const launcherContent = fs.readFileSync(launcherPath, 'utf-8');
-    assert(launcherContent.includes('export http_proxy='), 'Launcher sets http_proxy specifically');
-    assert(launcherContent.includes('export all_proxy='), 'Launcher sets all_proxy specifically');
-    assert(launcherContent.includes('exec "$OPENCODE_BIN"'), 'Launcher invokes opencode');
+    assert(
+      launcherContent.includes(isWindows ? 'set "http_proxy=' : 'export http_proxy='),
+      'Launcher sets http_proxy specifically'
+    );
+    assert(
+      launcherContent.includes(isWindows ? 'set "all_proxy=' : 'export all_proxy='),
+      'Launcher sets all_proxy specifically'
+    );
+    assert(
+      launcherContent.includes(isWindows ? '"%OPENCODE_BIN%"' : 'exec "$OPENCODE_BIN"'),
+      'Launcher invokes opencode'
+    );
 
     // Check that our current process global environment does NOT have system-wide TUN routing rules
     const normalIp = await LatencyTester.getNormalPublicIp();

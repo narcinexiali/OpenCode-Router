@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { IS_WINDOWS, resolveXrayBinary } from '../platform';
 
 export interface PrivilegeStatus {
   localProxyReady: boolean;
@@ -13,11 +14,27 @@ export interface PrivilegeStatus {
 export class PrivilegeWizard {
   public static checkStatus(): PrivilegeStatus {
     const projectRoot = path.resolve(__dirname, '../../../');
-    const xrayBin = path.join(projectRoot, 'bin', 'xray');
+    const xrayBin = resolveXrayBinary(projectRoot);
     const setupScriptPath = path.join(projectRoot, 'scripts', 'setup-privileges.sh');
 
     // Local proxy is always ready without privileges (ports > 1024)
     const localProxyReady = fs.existsSync(xrayBin);
+
+    if (IS_WINDOWS) {
+      // Windows has no cap_net_admin/sudoers concept. The default local
+      // SOCKS5/HTTP proxy mode is fully unprivileged and always available.
+      const summary = localProxyReady
+        ? 'Local SOCKS5/HTTP Proxy Mode is 100% active and unprivileged (no admin rights required).'
+        : 'Xray binary not found. Run start.bat to download Xray-core automatically.';
+
+      return {
+        localProxyReady,
+        hasNetAdminCap: false,
+        hasScopedSudo: false,
+        summary,
+        setupScriptPath
+      };
+    }
 
     let hasNetAdminCap = false;
     let hasScopedSudo = false;

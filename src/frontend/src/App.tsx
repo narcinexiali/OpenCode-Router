@@ -28,7 +28,7 @@ export const App: React.FC = () => {
     opencode: {
       installed: true,
       version: '1.19.5',
-      binaryPath: '/usr/local/bin/opencode',
+      binaryPath: 'opencode',
       configPath: '~/.config/opencode/opencode.json',
       defaultModel: 'opencode/deepseek-v4.1-flash-free'
     },
@@ -231,6 +231,7 @@ export const App: React.FC = () => {
               onDisconnectVpn={handleDisconnectVpn}
               onTestCurrent={handleTestCurrent}
               onRefreshSources={handleRefreshSources}
+              onStatusRefresh={fetchStatus}
               actionLoading={actionLoading}
             />
 
@@ -260,7 +261,7 @@ export const App: React.FC = () => {
             <span className="font-semibold text-slate-300">OpenCode Router</span>
             <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 font-mono">v1.0.0</span>
             <span>&bull;</span>
-            <span>Isolated User-Space Proxy for Ubuntu</span>
+            <span>Isolated User-Space Proxy for Windows &amp; Linux</span>
           </div>
           <div className="flex items-center gap-1.5 text-slate-400">
             <span>Created by</span>

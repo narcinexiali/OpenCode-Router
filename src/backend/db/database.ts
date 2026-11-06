@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { IS_WINDOWS } from '../platform';
 
 const DB_DIR = path.resolve(__dirname, '../../../data');
 if (!fs.existsSync(DB_DIR)) {
@@ -95,7 +96,9 @@ export function initDatabase() {
   const defaultSettings: Record<string, string> = {
     socks_port: '10808',
     http_port: '10809',
-    opencode_path: '/usr/local/bin/opencode',
+    opencode_path: IS_WINDOWS
+      ? path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming', 'npm', 'opencode.cmd')
+      : '/usr/local/bin/opencode',
     max_test_attempts: '25',
     test_timeout_seconds: '15',
     opencode_timeout_seconds: '20',

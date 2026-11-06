@@ -23,6 +23,7 @@ interface DashboardProps {
   onDisconnectVpn: () => void;
   onTestCurrent: () => void;
   onRefreshSources: () => void;
+  onStatusRefresh: () => void;
   actionLoading: boolean;
 }
 
@@ -33,10 +34,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onDisconnectVpn,
   onTestCurrent,
   onRefreshSources,
+  onStatusRefresh,
   actionLoading
 }) => {
   const isTesting = status?.isRunning || false;
   const activeConn = status?.activeConnection;
+
+  const [socksPort, setSocksPort] = React.useState<string>(String(status?.socksPort ?? '10808'));
+  const [httpPort, setHttpPort] = React.useState<string>(String(status?.httpPort ?? '10809'));
+  const [portSaveState, setPortSaveState] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [portError, setPortError] = React.useState<string>('');
+
+  React.useEffect(() => {
+    if (status) {
+      setSocksPort(String(status.socksPort));
+      setHttpPort(String(status.httpPort));
+    }
+  }, [status?.socksPort, status?.httpPort]);
+
+  const portsDirty = socksPort !== String(status?.socksPort ?? '') || httpPort !== String(status?.httpPort ?? '');
+
+  const savePorts = async () => {
+    setPortSaveState('saving');
+    setPortError('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ socks_port: socksPort, http_port: httpPort })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPortSaveState('error');
+        setPortError(json.error || 'Failed to save settings');
+        return;
+      }
+      setPortSaveState('saved');
+      onStatusRefresh();
+      setTimeout(() => setPortSaveState('idle'), 2000);
+    } catch (err: any) {
+      setPortSaveState('error');
+      setPortError(err.message || 'Failed to save settings');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -148,14 +188,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="pt-2 border-t border-slate-800 text-xs text-slate-400 space-y-1">
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center gap-2">
               <span>SOCKS5 Proxy:</span>
-              <span className="font-mono text-slate-200">127.0.0.1:{status?.socksPort || 10808}</span>
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={socksPort}
+                onChange={(e) => setSocksPort(e.target.value)}
+                disabled={isTesting || Boolean(activeConn)}
+                className="w-20 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-slate-200 text-xs text-right focus:outline-none focus:border-emerald-500/50 disabled:opacity-60"
+              />
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center gap-2">
               <span>HTTP Proxy:</span>
-              <span className="font-mono text-slate-200">127.0.0.1:{status?.httpPort || 10809}</span>
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={httpPort}
+                onChange={(e) => setHttpPort(e.target.value)}
+                disabled={isTesting || Boolean(activeConn)}
+                className="w-20 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-slate-200 text-xs text-right focus:outline-none focus:border-emerald-500/50 disabled:opacity-60"
+              />
             </div>
+            {portsDirty && portSaveState !== 'saving' && (
+              <button
+                onClick={savePorts}
+                className="w-full mt-1 px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold transition"
+              >
+                Save Ports
+              </button>
+            )}
+            {portSaveState === 'saving' && <div className="text-[11px] text-slate-500 text-right">Saving…</div>}
+            {portSaveState === 'saved' && <div className="text-[11px] text-emerald-400 text-right">Saved ✓</div>}
+            {portSaveState === 'error' && <div className="text-[11px] text-red-400 text-right">{portError}</div>}
+            {isTesting && <div className="text-[10px] text-slate-500">Ports locked while engine is running</div>}
           </div>
         </div>
 

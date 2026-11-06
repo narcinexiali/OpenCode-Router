@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { ErrorClassifier, ClassificationResult } from './error-classifier';
+import { IS_WINDOWS, resolveOpenCodeBinary, spawnOpenCode, shellQuote } from '../platform';
 
 export interface OpenCodeInfo {
   installed: boolean;
@@ -14,16 +15,21 @@ export interface OpenCodeInfo {
 
 export class OpenCodeService {
   private static instance: OpenCodeService | null = null;
-  private binaryPath: string = '/usr/local/bin/opencode';
+  private binaryPath: string = resolveOpenCodeBinary();
   private launcherPath: string;
 
   private constructor() {
     const projectRoot = path.resolve(__dirname, '../../../');
-    this.launcherPath = path.join(projectRoot, 'bin', 'opencode-vpn');
+    this.launcherPath = IS_WINDOWS
+      ? path.join(projectRoot, 'bin', 'opencode-vpn.cmd')
+      : path.join(projectRoot, 'bin', 'opencode-vpn');
 
     if (!fs.existsSync(this.binaryPath)) {
       try {
-        const found = execSync('which opencode', { encoding: 'utf-8' }).trim();
+        const found = execSync(
+          IS_WINDOWS ? `where ${shellQuote('opencode')}` : `which ${shellQuote('opencode')}`,
+          { encoding: 'utf-8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }
+        ).trim().split(/\r?\n/)[0];
         if (found) this.binaryPath = found;
       } catch {
         // keep fallback
@@ -48,7 +54,9 @@ export class OpenCodeService {
 
     if (installed) {
       try {
-        version = execSync(`${this.binaryPath} --version`, { encoding: 'utf-8', timeout: 3000 }).trim();
+        // Normalize `opencode --version` output ("opencode v2.2.5" -> "2.2.5")
+        const raw = execSync(`${shellQuote(this.binaryPath)} --version`, { encoding: 'utf-8', timeout: 3000 }).trim();
+        version = raw.split(/\s+/).pop()?.replace(/^v/, '') || raw;
       } catch {
         // ignore
       }
@@ -84,7 +92,31 @@ export class OpenCodeService {
       fs.mkdirSync(launcherDir, { recursive: true });
     }
 
-    const script = `#!/usr/bin/env bash
+    let script: string;
+    if (IS_WINDOWS) {
+      script = `@echo off
+rem Dedicated OpenCode VPN Launcher
+rem Injects the active local proxy specifically for OpenCode without system-wide routing changes.
+
+if not defined OPENCODE_HTTP_PROXY_PORT set "OPENCODE_HTTP_PROXY_PORT=10809"
+if not defined OPENCODE_SOCKS_PROXY_PORT set "OPENCODE_SOCKS_PROXY_PORT=10808"
+
+set "http_proxy=http://127.0.0.1:%OPENCODE_HTTP_PROXY_PORT%"
+set "https_proxy=http://127.0.0.1:%OPENCODE_HTTP_PROXY_PORT%"
+set "HTTP_PROXY=http://127.0.0.1:%OPENCODE_HTTP_PROXY_PORT%"
+set "HTTPS_PROXY=http://127.0.0.1:%OPENCODE_HTTP_PROXY_PORT%"
+set "all_proxy=socks5://127.0.0.1:%OPENCODE_SOCKS_PROXY_PORT%"
+set "ALL_PROXY=socks5://127.0.0.1:%OPENCODE_SOCKS_PROXY_PORT%"
+
+set "OPENCODE_BIN=${this.binaryPath}"
+if not exist "%OPENCODE_BIN%" (
+  for /f "usebackq delims=" %%i in (\`where opencode 2^>nul\`) do set "OPENCODE_BIN=%%i"
+)
+
+"%OPENCODE_BIN%" %*
+`;
+    } else {
+      script = `#!/usr/bin/env bash
 # Dedicated OpenCode VPN Launcher
 # Injects the active local proxy specifically for OpenCode without system-wide routing changes.
 
@@ -105,19 +137,22 @@ fi
 
 exec "\$OPENCODE_BIN" "\$@"
 `;
+    }
 
-    fs.writeFileSync(this.launcherPath, script, { encoding: 'utf-8', mode: 0o755 });
+    fs.writeFileSync(this.launcherPath, script, { encoding: 'utf-8', mode: IS_WINDOWS ? 0o644 : 0o755 });
 
-    // Also link to ~/.local/bin/opencode-vpn if directory exists
-    const userLocalBin = path.join(process.env.HOME || os.homedir(), '.local', 'bin');
-    if (fs.existsSync(userLocalBin)) {
-      const userLink = path.join(userLocalBin, 'opencode-vpn');
-      try {
-        if (!fs.existsSync(userLink)) {
-          fs.symlinkSync(this.launcherPath, userLink);
+    if (!IS_WINDOWS) {
+      // Also link to ~/.local/bin/opencode-vpn if directory exists
+      const userLocalBin = path.join(process.env.HOME || os.homedir(), '.local', 'bin');
+      if (fs.existsSync(userLocalBin)) {
+        const userLink = path.join(userLocalBin, 'opencode-vpn');
+        try {
+          if (!fs.existsSync(userLink)) {
+            fs.symlinkSync(this.launcherPath, userLink);
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
     }
   }
@@ -149,7 +184,8 @@ exec "\$OPENCODE_BIN" "\$@"
       let stderr = '';
       let isDone = false;
 
-      const child = spawn(this.binaryPath, args, {
+      const spawnSpec = spawnOpenCode(this.binaryPath, args);
+      const child = spawn(spawnSpec.file, spawnSpec.args, {
         env: proxyEnv,
         cwd: process.cwd(),
         stdio: ['ignore', 'pipe', 'pipe']

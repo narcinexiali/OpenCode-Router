@@ -9,6 +9,7 @@ interface PrivilegeSetupModalProps {
 export const PrivilegeSetupModal: React.FC<PrivilegeSetupModalProps> = ({ isOpen, onClose }) => {
   const [data, setData] = useState<any>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const isWindows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
 
   useEffect(() => {
     if (isOpen) {
@@ -52,7 +53,7 @@ export const PrivilegeSetupModal: React.FC<PrivilegeSetupModalProps> = ({ isOpen
             </div>
             <p className="text-slate-300">
               The primary engine runs entirely in user-space as an unprivileged process binding to high ports (10808/10809).
-              It will <strong>never ask for your Ubuntu root password</strong> during normal operation or node rotation.
+              It will <strong>never ask for your {isWindows ? 'administrator' : 'root (sudo)'} password</strong> during normal operation or node rotation.
             </p>
           </div>
 
@@ -64,13 +65,14 @@ export const PrivilegeSetupModal: React.FC<PrivilegeSetupModalProps> = ({ isOpen
             </h4>
             <ul className="list-disc list-inside space-y-1 text-slate-400">
               <li>Never stores passwords in plaintext.</li>
-              <li>Never grants unrestricted passwordless sudo to node or user.</li>
+              <li>Never grants unrestricted elevated (sudo/admin) privileges to node or user.</li>
               <li>Leaves IDEs, SSH sessions, browsers, and system traffic completely untouched.</li>
               <li>Only OpenCode receives proxy injection via <code className="text-sky-300 font-mono">opencode-vpn</code>.</li>
             </ul>
           </div>
 
-          {/* Optional Helper Setup */}
+          {/* Optional Helper Setup (Linux only: TUN / Network Capabilities) */}
+          {!isWindows && (
           <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2.5">
             <h4 className="font-bold text-white uppercase text-[11px]">
               Optional: Setup Narrow Privileges (for TUN / Network Capabilities)
@@ -90,6 +92,7 @@ export const PrivilegeSetupModal: React.FC<PrivilegeSetupModalProps> = ({ isOpen
               </button>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

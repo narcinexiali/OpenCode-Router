@@ -5,6 +5,7 @@ import net from 'net';
 import { db, getSetting } from '../db/database';
 import { XrayConfigBuilder } from './xray-config-builder';
 import { safeWriteSensitiveFile, ensureSecureDirectory } from '../security/file-guard';
+import { resolveXrayBinary } from '../platform';
 
 export interface ActiveConfigInfo {
   id: number;
@@ -31,14 +32,7 @@ export class VpnEngine {
 
   private constructor() {
     const projectRoot = path.resolve(__dirname, '../../../');
-    this.binPath = path.join(projectRoot, 'bin', 'xray');
-    if (!fs.existsSync(this.binPath)) {
-      if (fs.existsSync('/usr/local/bin/xray')) {
-        this.binPath = '/usr/local/bin/xray';
-      } else if (fs.existsSync('/usr/local/bin/v2ray')) {
-        this.binPath = '/usr/local/bin/v2ray';
-      }
-    }
+    this.binPath = resolveXrayBinary(projectRoot);
 
     const dataDir = path.join(projectRoot, 'data');
     ensureSecureDirectory(dataDir);

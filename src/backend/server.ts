@@ -367,6 +367,57 @@ app.get('/api/diagnostics', (req: Request, res: Response) => {
   });
 });
 
+// Update tunable settings (local proxy ports, test limits)
+const EDITABLE_SETTINGS: Record<string, { min: number; max: number }> = {
+  socks_port: { min: 1024, max: 65535 },
+  http_port: { min: 1024, max: 65535 },
+  max_test_attempts: { min: 1, max: 500 },
+  test_timeout_seconds: { min: 3, max: 120 },
+  opencode_timeout_seconds: { min: 5, max: 300 }
+};
+
+app.post('/api/settings', (req: Request, res: Response) => {
+  const updates = req.body || {};
+  if (typeof updates !== 'object' || Array.isArray(updates)) {
+    return res.status(400).json({ error: 'Request body must be an object of settings' });
+  }
+
+  const applied: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(updates)) {
+    const bounds = EDITABLE_SETTINGS[key];
+    if (!bounds) {
+      return res.status(400).json({ error: `Unknown or non-editable setting: ${key}` });
+    }
+    const value = parseInt(String(rawValue), 10);
+    if (isNaN(value) || value < bounds.min || value > bounds.max) {
+      return res.status(400).json({ error: `Setting ${key} must be an integer between ${bounds.min} and ${bounds.max}` });
+    }
+    applied[key] = String(value);
+  }
+
+  // SOCKS and HTTP ports must differ (against each other and current values)
+  const socksPort = applied.socks_port ?? getSetting('socks_port', '10808');
+  const httpPort = applied.http_port ?? getSetting('http_port', '10809');
+  if (socksPort === httpPort) {
+    return res.status(400).json({ error: 'SOCKS and HTTP ports must differ' });
+  }
+
+  for (const [key, value] of Object.entries(applied)) {
+    setSetting(key, value);
+  }
+
+  res.json({
+    success: true,
+    settings: {
+      socksPort: getSetting('socks_port', '10808'),
+      httpPort: getSetting('http_port', '10809'),
+      maxTestAttempts: getSetting('max_test_attempts', '25'),
+      testTimeoutSeconds: getSetting('test_timeout_seconds', '15'),
+      opencodeTimeoutSeconds: getSetting('opencode_timeout_seconds', '20')
+    }
+  });
+});
+
 // Serve static frontend files if built
 const frontendDist = path.resolve(__dirname, '../frontend/dist');
 if (fs.existsSync(frontendDist)) {

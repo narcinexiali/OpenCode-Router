@@ -10,7 +10,7 @@ const initialDiagnosticsData = {
   opencode: {
     installed: true,
     version: '1.19.5',
-    binaryPath: '/usr/local/bin/opencode',
+    binaryPath: 'opencode',
     configPath: '~/.config/opencode/opencode.json',
     defaultModel: 'opencode/deepseek-v4.1-flash-free'
   },
@@ -112,7 +112,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onCl
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
                 <span className="text-slate-500 block">Binary Executable:</span>
-                <span className="font-mono text-slate-200">{data?.opencode?.binaryPath || '/usr/local/bin/opencode'}</span>
+                <span className="font-mono text-slate-200">{data?.opencode?.binaryPath || 'opencode'}</span>
               </div>
               <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
                 <span className="text-slate-500 block">Version:</span>

@@ -5,11 +5,11 @@
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://ehsancreator.github.io/OpenCode-Router/)
 [![Version](https://img.shields.io/badge/version-v1.0.0-emerald.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Ubuntu%2024.04%20LTS%20(Verified)-orange.svg)]()
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-orange.svg)]()
 [![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)]()
 [![Author](https://img.shields.io/badge/author-Ehsan%20Shahriyari-purple.svg)](https://github.com/EhsanCreator)
 
-**Automated proxy discovery, testing, and intelligent routing for OpenCode. Fix connectivity issues and IP-based rate limits with Xray/V2Ray on Linux.**
+**Automated proxy discovery, testing, and intelligent routing for OpenCode. Fix connectivity issues and IP-based rate limits with Xray/V2Ray on Windows and Linux.**
 
 [Documentation Website](https://ehsancreator.github.io/OpenCode-Router/) •
 [Key Features](#5-key-features) •
@@ -25,7 +25,7 @@
 
 ## 2. Introduction
 
-**OpenCode Router** is an automated, open-source proxy discovery and intelligent routing manager built specifically for [OpenCode](https://github.com/anomaly/opencode) on Linux.
+**OpenCode Router** is an automated, open-source proxy discovery and intelligent routing manager built specifically for [OpenCode](https://github.com/anomaly/opencode) on Windows and Linux.
 
 When utilizing command-line AI coding assistants, developers regularly face regional ISP censorship, CDN firewalls, broken TCP sockets, and IP-level HTTP 429 rate limits. Traditional VPN clients attempt to solve this by creating system-wide TUN/TAP network adapters that redirect all operating system traffic—breaking local web servers, Docker bridge networks, database sockets, and active SSH sessions.
 
@@ -106,7 +106,7 @@ OpenCode Router consists of three decoupled layers:
 
 - **Backend Service (Express & TypeScript)**: Manages the SQLite database, runs the discovery crawler, controls Xray child processes, and streams real-time telemetry over Server-Sent Events (SSE).
 - **Frontend Dashboard (React 19 & Tailwind CSS)**: Single-page application providing connection controls, live testing logs, diagnostics, and configuration management.
-- **Dedicated Launcher (`bin/opencode-vpn`)**: A lightweight Bash wrapper that injects proxy environment variables strictly into OpenCode without altering host environment variables.
+- **Dedicated Launcher (`bin/opencode-vpn` / `bin/opencode-vpn.cmd`)**: A lightweight wrapper (Bash on Linux, batch on Windows) that injects proxy environment variables strictly into OpenCode without altering host environment variables.
 
 ---
 
@@ -116,21 +116,22 @@ To maintain absolute technical accuracy, platform compatibility is categorized a
 
 | Operating System | Compatibility Status | Verification Notes |
 | :--- | :---: | :--- |
+| **Windows 10 / 11 (x86_64)** | **Tested & Verified** | Full test suite, Xray engine E2E, dashboard UI, and `start.bat` launcher validated on Windows 11. |
 | **Ubuntu 24.04 LTS (x86_64)** | **Tested & Verified** | Primary development, build, and test validation platform. |
 | Ubuntu 22.04 LTS (x86_64) | *Likely Compatible* | Untested; requires Node.js >= 18.0.0 and modern bash. |
 | Debian 12 (Bookworm) | *Likely Compatible* | Untested; standard Debian package dependencies apply. |
 | Fedora / Arch Linux | *Untested* | Untested; binary architecture paths and curl requirements apply. |
-| macOS / Windows WSL | *Untested / Unsupported* | Linux-specific paths and launcher scripts utilized. |
+| macOS | *Untested* | Uses POSIX paths; not validated. |
 
 ---
 
 ## 10. Requirements
 
-- **Operating System**: Ubuntu 24.04 LTS (64-bit x86_64)
+- **Operating System**: Windows 10/11 (64-bit) or Ubuntu 24.04 LTS (64-bit x86_64)
 - **Node.js Runtime**: v18.0.0 or higher (`node -v`)
 - **Package Manager**: npm (`npm -v`)
-- **System Utilities**: `curl`, `unzip`
-- **Target Application**: OpenCode CLI installed (e.g. `/usr/local/bin/opencode`)
+- **System Utilities**: Linux: `curl`, `unzip` · Windows: none extra (built-in `curl.exe`/`tar.exe` are used)
+- **Target Application**: OpenCode CLI installed and available on `PATH`
 
 ---
 
@@ -148,15 +149,21 @@ npm install
 ```
 
 ### 3. Launch the Application
-Run the automated startup script:
+
+**Windows:** double-click or run from a terminal:
+```bat
+start.bat
+```
+
+**Linux/macOS:**
 ```bash
 ./start.sh
 ```
 
 The startup script will automatically:
-- Download the official Xray-core binary if missing from `bin/`.
+- Download the official Xray-core binary (`Xray-windows-64.zip` on Windows, `Xray-linux-*.zip` on Linux) if missing from `bin/`.
 - Compile the modern React frontend if `dist/` is not present.
-- Ensure `bin/opencode-vpn` has executable permissions.
+- On Linux, ensure `bin/opencode-vpn` has executable permissions.
 - Start the backend server on `http://localhost:3000`.
 - Open your default web browser to the dashboard.
 
@@ -172,6 +179,7 @@ cp .env.example .env
 
 Available environment variables:
 - `PORT`: Web dashboard port (default: `3000`).
+- (Windows note: the local SOCKS5/HTTP proxy ports default to `10808`/`10809` and can be changed directly in the dashboard's **VPN Engine** card — useful if another proxy tool such as a v2ray client already occupies `10808`.)
 - `OPENCODE_HTTP_PROXY_PORT`: Local HTTP proxy port (default: `10809`).
 - `OPENCODE_SOCKS_PROXY_PORT`: Local SOCKS5 proxy port (default: `10808`).
 - `OPENCODE_BIN`: Custom path to OpenCode binary (auto-detected if omitted).
@@ -189,7 +197,7 @@ Available environment variables:
 4. Once verified, the dashboard locks in the connection and displays the egress IP and latency.
 
 ### Using the Command-Line Wrapper
-Execute OpenCode commands through `bin/opencode-vpn`:
+Execute OpenCode commands through the dedicated launcher (`bin/opencode-vpn` on Linux, `bin\opencode-vpn.cmd` on Windows — both generated automatically on startup):
 
 ```bash
 # Launch interactive OpenCode terminal through the active proxy
@@ -200,6 +208,11 @@ bin/opencode-vpn run "Explain TypeScript generics"
 
 # Pure machine-readable response
 bin/opencode-vpn run "What is 2 + 2? Answer in one word." --pure
+```
+
+On Windows (from `cmd.exe` or PowerShell):
+```bat
+bin\opencode-vpn.cmd run "Explain TypeScript generics"
 ```
 
 ### Creating a System-Wide Alias / Symlink
