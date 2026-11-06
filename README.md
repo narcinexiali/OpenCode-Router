@@ -139,7 +139,7 @@ To maintain absolute technical accuracy, platform compatibility is categorized a
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/EhsanCreator/OpenCode-Router.git
+git clone https://github.com/narcinexiali/OpenCode-Router.git
 cd OpenCode-Router
 ```
 
