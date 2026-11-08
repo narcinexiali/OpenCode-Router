@@ -105,7 +105,7 @@ export class VpnEngine {
     security: string;
     network: string;
     details_json: string;
-  }, socksPort: number = 10808, httpPort: number = 10809): Promise<boolean> {
+  }, socksPort: number = 10808, httpPort: number = 10809, isTesting: boolean = false): Promise<boolean> {
     await this.stop();
 
     let details: Record<string, any> = {};
@@ -173,18 +173,20 @@ export class VpnEngine {
         const socksReady = await this.probePort('127.0.0.1', socksPort, 200);
 
         if (httpReady && socksReady) {
-          this.currentConfig = {
-            id: configRow.id,
-            protocol: configRow.protocol,
-            address: configRow.address,
-            port: configRow.port,
-            remark: configRow.remark,
-            security: configRow.security,
-            network: configRow.network,
-            connected_at: new Date().toISOString()
-          };
+          if (!isTesting) {
+            this.currentConfig = {
+              id: configRow.id,
+              protocol: configRow.protocol,
+              address: configRow.address,
+              port: configRow.port,
+              remark: configRow.remark,
+              security: configRow.security,
+              network: configRow.network,
+              connected_at: new Date().toISOString()
+            };
 
-          this.saveState();
+            this.saveState();
+          }
           resolve(true);
           return;
         }
@@ -250,6 +252,39 @@ export class VpnEngine {
 
     this.childProcess = null;
     this.cleanupState();
+  }
+
+  /**
+   * Lock in a verified candidate as the active connection
+   */
+  public lockActiveConfig(
+    configRow: {
+      id: number;
+      protocol: string;
+      address: string;
+      port: number;
+      remark: string;
+      security: string;
+      network: string;
+    },
+    latencyMs?: number,
+    egressIp?: string,
+    reason?: string
+  ): void {
+    this.currentConfig = {
+      id: configRow.id,
+      protocol: configRow.protocol,
+      address: configRow.address,
+      port: configRow.port,
+      remark: configRow.remark,
+      security: configRow.security,
+      network: configRow.network,
+      latency_ms: latencyMs,
+      egress_ip: egressIp,
+      reason: reason || 'Verified working connection',
+      connected_at: new Date().toISOString()
+    };
+    this.saveState();
   }
 
   private async probePort(host: string, port: number, timeoutMs: number): Promise<boolean> {

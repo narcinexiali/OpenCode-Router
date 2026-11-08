@@ -102,7 +102,9 @@ export function initDatabase() {
     max_test_attempts: '25',
     test_timeout_seconds: '15',
     opencode_timeout_seconds: '20',
-    rank_by: 'latency'
+    rank_by: 'latency',
+    scan_candidate_limit: '100',
+    opencode_verification_model: 'opencode/deepseek-v4.1-flash-free'
   };
 
   const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

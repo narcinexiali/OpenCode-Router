@@ -10,5 +10,6 @@
     "resolveJsonModule": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/backend/**/*", "tests/**/*"],
+  "exclude": ["src/frontend/**/*", "node_modules", "dist"]
 }

@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import { db, initDatabase, getSetting, setSetting } from './db/database';
 import { VpnEngine } from './vpn/vpn-engine';
-import { OpenCodeService } from './opencode/opencode-service';
+import { OpenCodeService, APPROVED_FREE_MODELS } from './opencode/opencode-service';
 import { ConnectionOrchestrator } from './orchestrator/connection-orchestrator';
 import { ConfigFetcher } from './discovery/config-fetcher';
 import { LatencyTester } from './tester/latency-tester';
@@ -91,23 +91,96 @@ app.get('/api/status', async (req: Request, res: Response) => {
     ...status,
     normalIp,
     socksPort: getSetting('socks_port', '10808'),
-    httpPort: getSetting('http_port', '10809')
+    httpPort: getSetting('http_port', '10809'),
+    scanCandidateLimit: getSetting('scan_candidate_limit', '100'),
+    verificationModel: opencode.getApprovedVerificationModel(),
+    approvedFreeModels: APPROVED_FREE_MODELS
   });
 });
 
 // Trigger "Find Working Connection"
 app.post('/api/workflow/start', async (req: Request, res: Response) => {
   const forceRefresh = Boolean(req.body.forceRefresh);
+  const scanLimit = req.body.scanLimit;
   if (orchestrator.getStatus().isRunning) {
     return res.status(409).json({ error: 'Testing workflow already running' });
   }
 
   // Run asynchronously so response is returned immediately
-  orchestrator.findWorkingConnection(forceRefresh).catch((err) => {
+  orchestrator.findWorkingConnection(forceRefresh, scanLimit).catch((err) => {
     console.error('Workflow error:', err);
   });
 
   res.json({ success: true, message: 'Workflow started' });
+});
+
+// Update Settings — accepts either { key, value } (SettingsPanel) or a batch object
+const EDITABLE_SETTINGS: Record<string, { kind: 'port' | 'int' | 'string'; min?: number; max?: number }> = {
+  socks_port: { kind: 'port', min: 1024, max: 65535 },
+  http_port: { kind: 'port', min: 1024, max: 65535 },
+  scan_candidate_limit: { kind: 'int', min: 1, max: 2000 },
+  max_test_attempts: { kind: 'int', min: 1, max: 500 },
+  test_timeout_seconds: { kind: 'int', min: 3, max: 120 },
+  opencode_timeout_seconds: { kind: 'int', min: 5, max: 300 },
+  opencode_verification_model: { kind: 'string' }
+};
+
+app.post('/api/settings', (req: Request, res: Response) => {
+  const body = req.body || {};
+  if (typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ error: 'Request body must be an object of settings' });
+  }
+
+  // Normalize single { key, value } calls into a batch
+  const updates: Record<string, unknown> =
+    typeof body.key === 'string' ? { [body.key]: body.value } : body;
+
+  const applied: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(updates)) {
+    const spec = EDITABLE_SETTINGS[key];
+    if (!spec) {
+      return res.status(400).json({ error: `Unknown or non-editable setting: ${key}` });
+    }
+    if (spec.kind === 'string') {
+      const value = String(rawValue ?? '').trim();
+      if (!value || value.length > 200) {
+        return res.status(400).json({ error: `Setting ${key} must be a non-empty string (max 200 chars)` });
+      }
+      applied[key] = value;
+      continue;
+    }
+    const value = parseInt(String(rawValue), 10);
+    if (isNaN(value) || value < (spec.min as number) || value > (spec.max as number)) {
+      return res.status(400).json({ error: `Setting ${key} must be an integer between ${spec.min} and ${spec.max}` });
+    }
+    applied[key] = String(value);
+  }
+
+  // SOCKS and HTTP ports must differ (against each other and current values)
+  const socksPort = applied.socks_port ?? getSetting('socks_port', '10808');
+  const httpPort = applied.http_port ?? getSetting('http_port', '10809');
+  if (socksPort === httpPort) {
+    return res.status(400).json({ error: 'SOCKS and HTTP ports must differ' });
+  }
+
+  for (const [key, value] of Object.entries(applied)) {
+    setSetting(key, value);
+  }
+
+  const firstKey = typeof body.key === 'string' ? body.key : undefined;
+  res.json({
+    success: true,
+    ...(firstKey ? { key: firstKey, value: applied[firstKey] } : {}),
+    settings: {
+      socksPort: getSetting('socks_port', '10808'),
+      httpPort: getSetting('http_port', '10809'),
+      scanCandidateLimit: getSetting('scan_candidate_limit', '100'),
+      maxTestAttempts: getSetting('max_test_attempts', '25'),
+      testTimeoutSeconds: getSetting('test_timeout_seconds', '15'),
+      opencodeTimeoutSeconds: getSetting('opencode_timeout_seconds', '20'),
+      opencodeVerificationModel: getSetting('opencode_verification_model', 'opencode/deepseek-v4.1-flash-free')
+    }
+  });
 });
 
 // Stop Testing
@@ -243,7 +316,7 @@ app.post('/api/configs/test-single', async (req: Request, res: Response) => {
 
 // Manually activate a configuration
 app.post('/api/configs/:id/activate', async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   const row = db.prepare('SELECT * FROM configs WHERE id = ?').get(id) as any;
   if (!row) {
     return res.status(404).json({ error: 'Configuration not found' });
@@ -269,7 +342,7 @@ app.post('/api/configs/:id/activate', async (req: Request, res: Response) => {
 
 // Delete a configuration
 app.delete('/api/configs/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   db.prepare('DELETE FROM configs WHERE id = ?').run(id);
   res.json({ success: true, message: 'Configuration deleted' });
 });
@@ -312,7 +385,7 @@ app.post('/api/sources', (req: Request, res: Response) => {
 
 // Refresh single source
 app.post('/api/sources/:id/refresh', async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   const summaries = await ConfigFetcher.fetchAllSources(id);
   res.json({ success: true, summary: summaries[0] });
 });
@@ -325,7 +398,7 @@ app.post('/api/sources/refresh-all', async (req: Request, res: Response) => {
 
 // Delete Source
 app.delete('/api/sources/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   db.prepare('DELETE FROM sources WHERE id = ?').run(id);
   res.json({ success: true });
 });
@@ -364,57 +437,6 @@ app.get('/api/diagnostics', (req: Request, res: Response) => {
     privilege: privilegeStatus,
     launcherScript: launcherPath,
     history: sanitizedHistory
-  });
-});
-
-// Update tunable settings (local proxy ports, test limits)
-const EDITABLE_SETTINGS: Record<string, { min: number; max: number }> = {
-  socks_port: { min: 1024, max: 65535 },
-  http_port: { min: 1024, max: 65535 },
-  max_test_attempts: { min: 1, max: 500 },
-  test_timeout_seconds: { min: 3, max: 120 },
-  opencode_timeout_seconds: { min: 5, max: 300 }
-};
-
-app.post('/api/settings', (req: Request, res: Response) => {
-  const updates = req.body || {};
-  if (typeof updates !== 'object' || Array.isArray(updates)) {
-    return res.status(400).json({ error: 'Request body must be an object of settings' });
-  }
-
-  const applied: Record<string, string> = {};
-  for (const [key, rawValue] of Object.entries(updates)) {
-    const bounds = EDITABLE_SETTINGS[key];
-    if (!bounds) {
-      return res.status(400).json({ error: `Unknown or non-editable setting: ${key}` });
-    }
-    const value = parseInt(String(rawValue), 10);
-    if (isNaN(value) || value < bounds.min || value > bounds.max) {
-      return res.status(400).json({ error: `Setting ${key} must be an integer between ${bounds.min} and ${bounds.max}` });
-    }
-    applied[key] = String(value);
-  }
-
-  // SOCKS and HTTP ports must differ (against each other and current values)
-  const socksPort = applied.socks_port ?? getSetting('socks_port', '10808');
-  const httpPort = applied.http_port ?? getSetting('http_port', '10809');
-  if (socksPort === httpPort) {
-    return res.status(400).json({ error: 'SOCKS and HTTP ports must differ' });
-  }
-
-  for (const [key, value] of Object.entries(applied)) {
-    setSetting(key, value);
-  }
-
-  res.json({
-    success: true,
-    settings: {
-      socksPort: getSetting('socks_port', '10808'),
-      httpPort: getSetting('http_port', '10809'),
-      maxTestAttempts: getSetting('max_test_attempts', '25'),
-      testTimeoutSeconds: getSetting('test_timeout_seconds', '15'),
-      opencodeTimeoutSeconds: getSetting('opencode_timeout_seconds', '20')
-    }
   });
 });
 

@@ -18,15 +18,17 @@ export interface RankedConfigRow {
 
 export class CandidateRanker {
   /**
-   * Get sorted candidate configurations ready for testing
+   * Get sorted and deduplicated candidate configurations ready for testing.
+   * Supports fixed limit (100, 250, 500), custom limits, or 'all'.
    */
-  public static getRankedCandidates(limit: number = 30): RankedConfigRow[] {
-    const rows = db.prepare(`
+  public static getRankedCandidates(limit: number | 'all' = 100): RankedConfigRow[] {
+    const isAll = limit === 'all' || limit <= 0;
+    const query = `
       SELECT
         id, protocol, address, port, remark, security, network, details_json,
         last_status, last_latency_ms, consecutive_failures, success_count
       FROM configs
-      WHERE consecutive_failures < 4
+      WHERE consecutive_failures < 5
       ORDER BY
         CASE
           WHEN last_status = 'working' THEN 1
@@ -34,10 +36,22 @@ export class CandidateRanker {
           ELSE 3
         END,
         consecutive_failures ASC,
+        success_count DESC,
+        CASE
+          WHEN protocol = 'vless' AND security = 'reality' THEN 1
+          WHEN protocol = 'vless' THEN 2
+          WHEN protocol = 'trojan' THEN 3
+          WHEN protocol = 'ss' THEN 4
+          ELSE 5
+        END,
         CASE WHEN last_latency_ms IS NOT NULL AND last_latency_ms > 0 THEN last_latency_ms ELSE 9999 END ASC,
         id ASC
-      LIMIT ?
-    `).all(limit * 2) as any[];
+      ${isAll ? '' : 'LIMIT ?'}
+    `;
+
+    const rows = (isAll
+      ? db.prepare(query).all()
+      : db.prepare(query).all((limit as number) * 3)) as any[];
 
     // Calculate smart score
     const scored: RankedConfigRow[] = rows.map((r) => {
@@ -52,7 +66,8 @@ export class CandidateRanker {
       // Penalty for consecutive failures
       score -= r.consecutive_failures * 30;
 
-      // Bonus for VLESS Reality/TLS
+      // Bonus for VLESS Reality/TLS and lightweight Shadowsocks
+      if (r.protocol === 'ss') score += 25;
       if (r.protocol === 'vless') score += 20;
       if (r.security === 'reality') score += 15;
       if (r.protocol === 'trojan') score += 10;
@@ -70,9 +85,25 @@ export class CandidateRanker {
       };
     });
 
-    // Sort descending by score
+    // Deduplicate by normalized address:port, keeping the highest scoring config
+    const seenEndpoints = new Set<string>();
+    const deduplicated: RankedConfigRow[] = [];
+
+    // Sort descending by score first so deduplication preserves highest quality config
     scored.sort((a, b) => b.score - a.score);
 
-    return scored.slice(0, limit);
+    for (const item of scored) {
+      const endpointKey = `${item.address.toLowerCase().trim()}:${item.port}`;
+      if (!seenEndpoints.has(endpointKey)) {
+        seenEndpoints.add(endpointKey);
+        deduplicated.push(item);
+      }
+    }
+
+    if (isAll) {
+      return deduplicated;
+    }
+
+    return deduplicated.slice(0, limit as number);
   }
 }

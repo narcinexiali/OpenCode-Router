@@ -20,8 +20,36 @@ export interface OpenCodeInfo {
   defaultModel?: string;
 }
 
+export interface PipelineMetrics {
+  totalSelected: number;
+  scanLimit: number | 'all';
+  tcp: { completed: number; passed: number; failed: number };
+  tunnel: { completed: number; passed: number; failed: number };
+  opencode: { completed: number; passed: number; failed: number; model: string };
+  currentCandidate?: string;
+  bestCandidate?: {
+    id: number;
+    remark: string;
+    protocol: string;
+    tcpLatencyMs?: number;
+    tunnelLatencyMs?: number;
+  };
+}
+
 export interface SystemStatus {
-  phase: 'idle' | 'discovering' | 'testing' | 'success' | 'rate_limited' | 'auth_error' | 'failed' | 'exhausted' | 'stopped';
+  phase:
+    | 'idle'
+    | 'discovering'
+    | 'tcp_screening'
+    | 'tunnel_verification'
+    | 'opencode_verification'
+    | 'testing'
+    | 'success'
+    | 'rate_limited'
+    | 'auth_error'
+    | 'failed'
+    | 'exhausted'
+    | 'stopped';
   isRunning: boolean;
   message: string;
   activeConnection: ActiveConnection | null;
@@ -29,6 +57,10 @@ export interface SystemStatus {
   normalIp: string;
   socksPort: string;
   httpPort: string;
+  scanCandidateLimit?: string | number;
+  verificationModel?: string;
+  approvedFreeModels?: string[];
+  pipelineMetrics?: PipelineMetrics;
   stats: {
     totalConfigs: number;
     workingCount: number;
